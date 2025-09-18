@@ -1,45 +1,55 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Activity, Mail, Lock, ArrowLeft } from 'lucide-react';
+import { Activity, Mail, Lock, ArrowLeft, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { loginSchema, type LoginFormData } from '@/lib/validations';
 
 export const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, error: authError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = location.state?.from?.pathname || '/dashboard';
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    setError,
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  });
 
-    if (!email || !password) {
-      setError('Por favor, completa todos los campos');
-      return;
-    }
-
-    const success = await login(email, password);
-    if (success) {
-      toast.success('¡Bienvenido de vuelta!');
-      // Check onboarding status from localStorage after successful login
-      const userData = JSON.parse(localStorage.getItem('armonia_user') || 'null');
-      if (userData && userData.onboardingCompleted !== true) {
-        navigate('/onboarding', { replace: true });
-      } else {
-        navigate(from, { replace: true });
+  const onSubmit = async (data: LoginFormData) => {
+    try {
+      const success = await login(data.email, data.password);
+      if (success) {
+        toast.success('¡Bienvenido de vuelta!');
+        // Check onboarding status from the auth service
+        const userData = JSON.parse(localStorage.getItem('armonia_user') || 'null');
+        if (userData && userData.onboardingCompleted !== true) {
+          navigate('/onboarding', { replace: true });
+        } else {
+          navigate(from, { replace: true });
+        }
       }
-    } else {
-      setError('Email o contraseña incorrectos');
+    } catch (error) {
+      console.error('Login error:', error);
+      setError('root', {
+        message: 'Error inesperado durante el inicio de sesión'
+      });
     }
   };
 
@@ -55,111 +65,101 @@ export const Login: React.FC = () => {
           Volver al inicio
         </Link>
 
-        <Card className="shadow-glow border-white/20">
+        <Card className="backdrop-blur-sm bg-white/10 border-white/20">
           <CardHeader className="text-center">
-            <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              <Activity className="h-6 w-6 text-primary" />
+            <div className="flex justify-center mb-4">
+              <div className="p-3 rounded-full bg-gradient-to-r from-blue-500 to-purple-600">
+                <Activity className="h-8 w-8 text-white" />
+              </div>
             </div>
-            <CardTitle className="text-2xl font-bold">Iniciar Sesión</CardTitle>
-            <CardDescription>
-              Accede a tu espacio personal de bienestar
+            <CardTitle className="text-2xl font-bold text-white">
+              Iniciar Sesión
+            </CardTitle>
+            <CardDescription className="text-white/70">
+              Accede a tu cuenta de ArmonIA
             </CardDescription>
           </CardHeader>
+          
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {/* Global Error */}
+              {(authError || errors.root) && (
+                <Alert variant="destructive" className="bg-red-500/10 border-red-500/20">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-red-200">
+                    {authError || errors.root?.message}
+                  </AlertDescription>
                 </Alert>
               )}
 
+              {/* Email Field */}
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-white">
+                  Email
+                </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-white/50" />
                   <Input
                     id="email"
                     type="email"
                     placeholder="tu@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10"
-                    required
+                    className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-white/40"
+                    {...register('email')}
+                    disabled={isLoading || isSubmitting}
                   />
                 </div>
+                {errors.email && (
+                  <p className="text-sm text-red-300">{errors.email.message}</p>
+                )}
               </div>
 
+              {/* Password Field */}
               <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
+                <Label htmlFor="password" className="text-white">
+                  Contraseña
+                </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-white/50" />
                   <Input
                     id="password"
                     type="password"
                     placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10"
-                    required
+                    className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-white/40"
+                    {...register('password')}
+                    disabled={isLoading || isSubmitting}
                   />
                 </div>
+                {errors.password && (
+                  <p className="text-sm text-red-300">{errors.password.message}</p>
+                )}
               </div>
 
               <Button 
                 type="submit" 
-                className="w-full btn-hero" 
-                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium py-2.5"
+                disabled={isLoading || isSubmitting}
               >
-                {isLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Iniciando sesión...
-                  </>
-                ) : (
-                  'Iniciar Sesión'
-                )}
+                {isLoading || isSubmitting ? 'Iniciando sesión...' : 'Iniciar Sesión'}
               </Button>
-
-              <div className="text-center">
-                <Link
-                  to="#"
-                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  ¿Olvidaste tu contraseña?
-                </Link>
-              </div>
             </form>
 
             <div className="mt-6 text-center">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-white/70">
                 ¿No tienes cuenta?{' '}
-                <Link to="/signup" className="text-primary hover:underline font-medium">
+                <Link 
+                  to="/signup" 
+                  className="text-blue-300 hover:text-blue-200 font-medium transition-colors"
+                >
                   Regístrate aquí
                 </Link>
               </p>
             </div>
 
             {/* Demo Credentials */}
-            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-              <p className="text-xs text-muted-foreground text-center mb-2 font-medium">
-                Credenciales de demo:
+            <div className="mt-4 p-3 bg-white/5 rounded-lg border border-white/10">
+              <p className="text-xs text-white/60 text-center">
+                💡 Tip: Crea una cuenta nueva o usa credenciales existentes
               </p>
-              <p className="text-xs text-muted-foreground text-center">
-                Email: demo@armonia.com<br />
-                Contraseña: demo123
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full mt-2"
-                onClick={() => {
-                  setEmail('demo@armonia.com');
-                  setPassword('demo123');
-                }}
-              >
-                Usar credenciales de demo
-              </Button>
             </div>
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -10,83 +10,151 @@ interface MoodChartProps {
   }>;
 }
 
-export const MoodChart: React.FC<MoodChartProps> = ({ data }) => {
-  const formatTooltip = (value: number, name: string, props: Record<string, unknown>) => {
-    const moodNames = {
-      1: 'Triste 😔',
-      2: 'Content@ 😊',
-      3: 'Tranquil@ 😌',
-      4: 'Feliz 🤗',
-      5: 'Emocionad@ ✨'
-    };
-    
-    return [moodNames[value as keyof typeof moodNames] || value, 'Estado de ánimo'];
-  };
+const MOOD_NAMES = {
+  1: 'Triste 😔',
+  2: 'Content@ 😊',
+  3: 'Tranquil@ 😌',
+  4: 'Feliz 🤗',
+  5: 'Emocionad@ ✨'
+} as const;
 
-  if (data.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Tendencia de Estado de Ánimo</CardTitle>
-          <CardDescription>
-            Tu progreso emocional durante los últimos 30 días
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-64 flex items-center justify-center text-muted-foreground">
-            No hay datos suficientes para mostrar la tendencia
-          </div>
-        </CardContent>
-      </Card>
-    );
+const EmptyState = memo(() => (
+  <Card>
+    <CardHeader>
+      <CardTitle>Tendencia de Estado de Ánimo</CardTitle>
+      <CardDescription>
+        Tu progreso emocional durante los últimos 30 días
+      </CardDescription>
+    </CardHeader>
+    <CardContent>
+      <div className="h-64 flex items-center justify-center text-muted-foreground">
+        No hay datos suficientes para mostrar la tendencia
+      </div>
+    </CardContent>
+  </Card>
+));
+
+EmptyState.displayName = 'EmptyState';
+
+export const MoodChart = memo<MoodChartProps>(({ data }) => {
+  const formatTooltip = useCallback((value: number, name: string, props: Record<string, unknown>) => {
+    return [MOOD_NAMES[value as keyof typeof MOOD_NAMES] || value, 'Estado de ánimo'];
+  }, []);
+
+  const formatXAxisLabel = useCallback((tickItem: string) => {
+    const date = new Date(tickItem);
+    return date.toLocaleDateString('es-ES', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  }, []);
+
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    
+    // Sort data by date and ensure proper formatting
+    return [...data]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map(item => ({
+        ...item,
+        mood: Number(item.mood) || 0,
+        formattedDate: new Date(item.date).toLocaleDateString('es-ES', { 
+          month: 'short', 
+          day: 'numeric' 
+        })
+      }));
+  }, [data]);
+
+  const averageMood = useMemo(() => {
+    if (chartData.length === 0) return 0;
+    const sum = chartData.reduce((acc, item) => acc + item.mood, 0);
+    return (sum / chartData.length).toFixed(1);
+  }, [chartData]);
+
+  const moodTrend = useMemo(() => {
+    if (chartData.length < 2) return 'neutral';
+    const firstHalf = chartData.slice(0, Math.floor(chartData.length / 2));
+    const secondHalf = chartData.slice(Math.floor(chartData.length / 2));
+    
+    const firstAvg = firstHalf.reduce((acc, item) => acc + item.mood, 0) / firstHalf.length;
+    const secondAvg = secondHalf.reduce((acc, item) => acc + item.mood, 0) / secondHalf.length;
+    
+    const difference = secondAvg - firstAvg;
+    if (difference > 0.2) return 'improving';
+    if (difference < -0.2) return 'declining';
+    return 'stable';
+  }, [chartData]);
+
+  const trendIcon = useMemo(() => {
+    switch (moodTrend) {
+      case 'improving': return '📈';
+      case 'declining': return '📉';
+      default: return '➡️';
+    }
+  }, [moodTrend]);
+
+  const trendText = useMemo(() => {
+    switch (moodTrend) {
+      case 'improving': return 'Mejorando';
+      case 'declining': return 'Necesita atención';
+      default: return 'Estable';
+    }
+  }, [moodTrend]);
+
+  if (chartData.length === 0) {
+    return <EmptyState />;
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Tendencia de Estado de Ánimo</CardTitle>
+        <CardTitle className="flex items-center justify-between">
+          Tendencia de Estado de Ánimo
+          <span className="text-sm font-normal flex items-center gap-1">
+            {trendIcon} {trendText}
+          </span>
+        </CardTitle>
         <CardDescription>
-          Tu progreso emocional durante los últimos 30 días
+          Tu progreso emocional durante los últimos 30 días • Promedio: {averageMood}/5
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data}>
+            <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
               <XAxis 
                 dataKey="date" 
-                fontSize={12}
-                tickLine={false}
+                tickFormatter={formatXAxisLabel}
+                tick={{ fontSize: 12 }}
                 axisLine={false}
+                tickLine={false}
               />
               <YAxis 
-                domain={[0.5, 5.5]}
-                ticks={[1, 2, 3, 4, 5]}
-                fontSize={12}
-                tickLine={false}
+                domain={[1, 5]} 
+                tick={{ fontSize: 12 }}
                 axisLine={false}
-                tickFormatter={(value) => {
-                  const emojis = { 1: '😔', 2: '😊', 3: '😌', 4: '🤗', 5: '✨' };
-                  return emojis[value as keyof typeof emojis] || value;
-                }}
+                tickLine={false}
+                tickCount={5}
               />
               <Tooltip 
                 formatter={formatTooltip}
-                labelStyle={{ color: 'hsl(var(--foreground))' }}
+                labelFormatter={(label) => `Fecha: ${new Date(label).toLocaleDateString('es-ES')}`}
                 contentStyle={{
                   backgroundColor: 'hsl(var(--card))',
                   border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px'
+                  borderRadius: '8px',
+                  fontSize: '12px'
                 }}
               />
               <Line 
                 type="monotone" 
                 dataKey="mood" 
                 stroke="hsl(var(--primary))" 
-                strokeWidth={3}
+                strokeWidth={2}
                 dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
                 activeDot={{ r: 6, stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
+                connectNulls={false}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -94,4 +162,6 @@ export const MoodChart: React.FC<MoodChartProps> = ({ data }) => {
       </CardContent>
     </Card>
   );
-};
+});
+
+MoodChart.displayName = 'MoodChart';

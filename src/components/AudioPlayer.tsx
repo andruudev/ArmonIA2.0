@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -22,21 +22,211 @@ import {
   Brain
 } from 'lucide-react';
 
-const categoryIcons = {
+const CATEGORY_ICONS = {
   nature: TreePine,
   ambient: Music,
   meditation: Brain,
   'white-noise': Zap
-};
+} as const;
 
-const categoryNames = {
+const CATEGORY_NAMES = {
   nature: 'Naturaleza',
   ambient: 'Ambiente',
   meditation: 'Meditación',
   'white-noise': 'Ruido Blanco'
-};
+} as const;
 
-export const AudioPlayer: React.FC = () => {
+interface TrackItemProps {
+  track: any;
+  isCurrentTrack: boolean;
+  isPlaying: boolean;
+  onPlay: (track: any) => void;
+}
+
+const TrackItem = memo<TrackItemProps>(({ track, isCurrentTrack, isPlaying, onPlay }) => {
+  const handlePlay = useCallback(() => {
+    onPlay(track);
+  }, [track, onPlay]);
+
+  const IconComponent = CATEGORY_ICONS[track.category as keyof typeof CATEGORY_ICONS] || Music;
+
+  return (
+    <Card 
+      className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
+        isCurrentTrack ? 'ring-2 ring-primary bg-primary/5' : ''
+      }`}
+      onClick={handlePlay}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-center space-x-3">
+          <div className={`p-2 rounded-full ${isCurrentTrack ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+            <IconComponent className="h-4 w-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="font-medium text-sm truncate">{track.title}</h4>
+            <p className="text-xs text-muted-foreground truncate">{track.description}</p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Badge variant="secondary" className="text-xs">
+              {track.duration}
+            </Badge>
+            {isCurrentTrack && (
+              <div className="flex items-center">
+                {isPlaying ? (
+                  <div className="flex space-x-1">
+                    <div className="w-1 h-3 bg-primary animate-pulse"></div>
+                    <div className="w-1 h-3 bg-primary animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-1 h-3 bg-primary animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                  </div>
+                ) : (
+                  <Pause className="h-3 w-3 text-primary" />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+});
+
+TrackItem.displayName = 'TrackItem';
+
+interface ControlsProps {
+  isPlaying: boolean;
+  currentTrack: any;
+  volume: number;
+  currentTime: number;
+  duration: number;
+  onPlay: () => void;
+  onPause: () => void;
+  onStop: () => void;
+  onVolumeChange: (volume: number) => void;
+  onSeek: (time: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+}
+
+const Controls = memo<ControlsProps>(({
+  isPlaying,
+  currentTrack,
+  volume,
+  currentTime,
+  duration,
+  onPlay,
+  onPause,
+  onStop,
+  onVolumeChange,
+  onSeek,
+  onPrevious,
+  onNext
+}) => {
+  const formatTime = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, []);
+
+  const handleVolumeChange = useCallback((value: number[]) => {
+    onVolumeChange(value[0]);
+  }, [onVolumeChange]);
+
+  const handleSeek = useCallback((value: number[]) => {
+    onSeek(value[0]);
+  }, [onSeek]);
+
+  const progress = useMemo(() => {
+    return duration > 0 ? (currentTime / duration) * 100 : 0;
+  }, [currentTime, duration]);
+
+  if (!currentTrack) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="text-center text-muted-foreground">
+            <Music className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>Selecciona una pista para comenzar</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="space-y-4">
+          {/* Track Info */}
+          <div className="text-center">
+            <h3 className="font-semibold text-lg">{currentTrack.title}</h3>
+            <p className="text-sm text-muted-foreground">{currentTrack.description}</p>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="space-y-2">
+            <Slider
+              value={[currentTime]}
+              max={duration}
+              step={1}
+              onValueChange={handleSeek}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
+            </div>
+          </div>
+
+          {/* Control Buttons */}
+          <div className="flex items-center justify-center space-x-4">
+            <Button variant="outline" size="sm" onClick={onPrevious}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            
+            {isPlaying ? (
+              <Button onClick={onPause} size="lg" className="rounded-full">
+                <Pause className="h-6 w-6" />
+              </Button>
+            ) : (
+              <Button onClick={onPlay} size="lg" className="rounded-full">
+                <Play className="h-6 w-6" />
+              </Button>
+            )}
+            
+            <Button variant="outline" size="sm" onClick={onStop}>
+              <Square className="h-4 w-4" />
+            </Button>
+            
+            <Button variant="outline" size="sm" onClick={onNext}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Volume Control */}
+          <div className="flex items-center space-x-3">
+            {volume === 0 ? (
+              <VolumeX className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <Volume2 className="h-4 w-4 text-muted-foreground" />
+            )}
+            <Slider
+              value={[volume]}
+              max={100}
+              step={1}
+              onValueChange={handleVolumeChange}
+              className="flex-1"
+            />
+            <span className="text-xs text-muted-foreground w-8">{volume}%</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+});
+
+Controls.displayName = 'Controls';
+
+export const AudioPlayer = memo(() => {
   const {
     isPlaying,
     currentTrack,
@@ -48,231 +238,102 @@ export const AudioPlayer: React.FC = () => {
     pause,
     stop,
     setVolume,
-    setAudioTime,
-    getRecommendedTracks
+    seek,
+    nextTrack,
+    previousTrack,
+    playTrack
   } = useAudio();
 
-  const [activeTab, setActiveTab] = useState('all');
-  const [isMuted, setIsMuted] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // No need for audio event listeners with synthetic audio
+  const categories = useMemo(() => {
+    const cats = Array.from(new Set(audioTracks.map(track => track.category)));
+    return ['all', ...cats];
+  }, [audioTracks]);
 
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
+  const filteredTracks = useMemo(() => {
+    if (selectedCategory === 'all') return audioTracks;
+    return audioTracks.filter(track => track.category === selectedCategory);
+  }, [audioTracks, selectedCategory]);
 
-  const handleVolumeChange = (value: number[]) => {
-    const newVolume = value[0] / 100;
-    setVolume(newVolume);
-    setIsMuted(newVolume === 0);
-  };
-
-  const toggleMute = () => {
-    if (isMuted) {
-      setVolume(0.5);
-      setIsMuted(false);
+  const handleTrackPlay = useCallback((track: any) => {
+    if (currentTrack?.id === track.id) {
+      if (isPlaying) {
+        pause();
+      } else {
+        play();
+      }
     } else {
-      setVolume(0);
-      setIsMuted(true);
+      playTrack(track);
     }
-  };
+  }, [currentTrack?.id, isPlaying, pause, play, playTrack]);
 
-  const filteredTracks = activeTab === 'all' 
-    ? audioTracks 
-    : audioTracks.filter(track => track.category === activeTab);
-
-  const getCategoryIcon = (category: string) => {
-    const Icon = categoryIcons[category as keyof typeof categoryIcons];
-    return Icon ? <Icon className="h-4 w-4" /> : <Music className="h-4 w-4" />;
-  };
-
-  const handlePlay = (track: any) => {
-    play(track);
-    toast.success(`🎵 Reproduciendo: ${track.name}`);
-  };
+  const handleCategoryChange = useCallback((category: string) => {
+    setSelectedCategory(category);
+  }, []);
 
   return (
     <div className="space-y-6">
-      {/* Audio Player */}
-      <Card className="bg-gradient-to-r from-primary/5 to-secondary/5 border-primary/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Music className="h-6 w-6 text-primary" />
-            Reproductor de Audio
-          </CardTitle>
-          <CardDescription>
-            Sonidos relajantes para mejorar tu bienestar
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {currentTrack ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                  {getCategoryIcon(currentTrack.category)}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">{currentTrack.name}</h3>
-                  <p className="text-sm text-muted-foreground">{currentTrack.description}</p>
-                </div>
-                <Badge variant="secondary">
-                  {categoryNames[currentTrack.category as keyof typeof categoryNames]}
-                </Badge>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <Slider
-                  value={[currentTime]}
-                  max={duration || 100}
-                  step={1}
-                  onValueChange={(value) => setAudioTime(value[0])}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
-                </div>
-              </div>
-
-              {/* Controls */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAudioTime(Math.max(0, currentTime - 10))}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    onClick={isPlaying ? pause : () => currentTrack && handlePlay(currentTrack)}
-                    size="sm"
-                    className="btn-peaceful"
-                  >
-                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={stop}
-                  >
-                    <Square className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAudioTime(Math.min(duration, currentTime + 10))}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleMute}
-                  >
-                    {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                  </Button>
-                  <div className="flex-1 sm:w-20">
-                    <Slider
-                      value={[volume * 100]}
-                      max={100}
-                      step={1}
-                      onValueChange={handleVolumeChange}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <Music className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Selecciona una pista para comenzar</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Audio Controls */}
+      <Controls
+        isPlaying={isPlaying}
+        currentTrack={currentTrack}
+        volume={volume}
+        currentTime={currentTime}
+        duration={duration}
+        onPlay={play}
+        onPause={pause}
+        onStop={stop}
+        onVolumeChange={setVolume}
+        onSeek={seek}
+        onPrevious={previousTrack}
+        onNext={nextTrack}
+      />
 
       {/* Track Library */}
       <Card>
         <CardHeader>
-          <CardTitle>Biblioteca de Sonidos</CardTitle>
+          <CardTitle>Biblioteca de Audio</CardTitle>
           <CardDescription>
-            Explora nuestra colección de sonidos relajantes
+            Selecciona sonidos relajantes para mejorar tu bienestar
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5">
-              <TabsTrigger value="all" className="text-xs">Todos</TabsTrigger>
-              <TabsTrigger value="nature" className="text-xs">Naturaleza</TabsTrigger>
-              <TabsTrigger value="ambient" className="text-xs">Ambiente</TabsTrigger>
-              <TabsTrigger value="meditation" className="text-xs">Meditación</TabsTrigger>
-              <TabsTrigger value="white-noise" className="text-xs">Ruido Blanco</TabsTrigger>
+          <Tabs value={selectedCategory} onValueChange={handleCategoryChange}>
+            <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5">
+              <TabsTrigger value="all">Todos</TabsTrigger>
+              {categories.slice(1).map((category) => (
+                <TabsTrigger key={category} value={category}>
+                  {CATEGORY_NAMES[category as keyof typeof CATEGORY_NAMES] || category}
+                </TabsTrigger>
+              ))}
             </TabsList>
-
-            <TabsContent value={activeTab} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+            
+            <div className="mt-6">
+              <div className="grid gap-3">
                 {filteredTracks.map((track) => (
-                  <Card 
-                    key={track.id} 
-                    className={`cursor-pointer hover-lift transition-all ${
-                      currentTrack?.id === track.id ? 'ring-2 ring-primary' : ''
-                    }`}
-                    onClick={() => play(track)}
-                  >
-                    <CardContent className="p-3 md:p-4">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                          {getCategoryIcon(track.category)}
-                        </div>
-                        <div className="flex-1 min-w-0 w-full sm:w-auto">
-                          <h4 className="font-semibold text-sm truncate">{track.name}</h4>
-                          <p className="text-xs text-muted-foreground line-clamp-2">{track.description}</p>
-                          <div className="flex flex-wrap items-center gap-1 mt-1">
-                            <Badge variant="outline" className="text-xs">
-                              {categoryNames[track.category as keyof typeof categoryNames]}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {Math.floor(track.duration / 60)} min
-                            </span>
-                          </div>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant={currentTrack?.id === track.id ? "default" : "outline"}
-                          className="flex-shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (currentTrack?.id === track.id) {
-                              isPlaying ? pause() : handlePlay(track);
-                            } else {
-                              handlePlay(track);
-                            }
-                          }}
-                        >
-                          {currentTrack?.id === track.id && isPlaying ? (
-                            <Pause className="h-3 w-3" />
-                          ) : (
-                            <Play className="h-3 w-3" />
-                          )}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <TrackItem
+                    key={track.id}
+                    track={track}
+                    isCurrentTrack={currentTrack?.id === track.id}
+                    isPlaying={isPlaying && currentTrack?.id === track.id}
+                    onPlay={handleTrackPlay}
+                  />
                 ))}
               </div>
-            </TabsContent>
+              
+              {filteredTracks.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Music className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No hay pistas disponibles en esta categoría</p>
+                </div>
+              )}
+            </div>
           </Tabs>
         </CardContent>
       </Card>
-
-      {/* No hidden audio element needed for synthetic audio */}
     </div>
   );
-};
+});
+
+AudioPlayer.displayName = 'AudioPlayer';

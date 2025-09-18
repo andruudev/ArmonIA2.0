@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
+import { AuthService } from '@/services/authService';
 
 export interface User {
   id: string;
@@ -14,7 +15,9 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
-  completeOnboarding: () => void;
+  completeOnboarding: () => Promise<void>;
+  updateProfile: (updates: Partial<Pick<User, 'name'>>) => Promise<void>;
+  error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,99 +30,116 @@ export const useAuth = () => {
   return context;
 };
 
-// Mock authentication logic with localStorage
+// Enhanced authentication logic with secure password handling
 export const useAuthLogic = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('armonia_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
+    // Load current user on app start
+    const currentUser = AuthService.getCurrentUser();
+    setUser(currentUser);
     setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
+    setError(null);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Mock authentication - check if user exists in localStorage
-    const users = JSON.parse(localStorage.getItem('armonia_users') || '[]');
-    const existingUser = users.find((u: any) => u.email === email && u.password === password);
-    
-    if (existingUser) {
-      const userData: User = { 
-        id: existingUser.id, 
-        email: existingUser.email, 
-        name: existingUser.name,
-        onboardingCompleted: !!existingUser.onboardingCompleted,
-      };
-      setUser(userData);
-      localStorage.setItem('armonia_user', JSON.stringify(userData));
+    try {
+      // Simulate network delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      const loggedInUser = await AuthService.login(email, password);
+      if (loggedInUser) {
+        setUser(loggedInUser);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error al iniciar sesión';
+      setError(errorMessage);
+      console.error('Login error:', err);
+      return false;
+    } finally {
       setIsLoading(false);
-      return true;
     }
-    
-    setIsLoading(false);
-    return false;
   };
 
   const signup = async (email: string, password: string, name: string): Promise<boolean> => {
     setIsLoading(true);
+    setError(null);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Check if user already exists
-    const users = JSON.parse(localStorage.getItem('armonia_users') || '[]');
-    if (users.find((u: any) => u.email === email)) {
-      setIsLoading(false);
+    try {
+      // Simulate network delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const newUser = await AuthService.signup(email, password, name);
+      setUser(newUser);
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error al crear la cuenta';
+      setError(errorMessage);
+      console.error('Signup error:', err);
       return false;
+    } finally {
+      setIsLoading(false);
     }
-    
-    // Create new user
-    const newUser = { 
-      id: Date.now().toString(), 
-      email, 
-      password, 
-      name,
-      onboardingCompleted: false,
-      createdAt: new Date().toISOString()
-    };
-    
-    users.push(newUser);
-    localStorage.setItem('armonia_users', JSON.stringify(users));
-    
-    const userData: User = { id: newUser.id, email: newUser.email, name: newUser.name, onboardingCompleted: false };
-    setUser(userData);
-    localStorage.setItem('armonia_user', JSON.stringify(userData));
-    
-    setIsLoading(false);
-    return true;
   };
 
-  const completeOnboarding = () => {
-    if (!user) return;
-    const updated: User = { ...user, onboardingCompleted: true };
-    setUser(updated);
-    localStorage.setItem('armonia_user', JSON.stringify(updated));
+  const completeOnboarding = async (): Promise<void> => {
+    if (!user) {
+      throw new Error('No hay usuario autenticado');
+    }
 
-    // also update the stored users list
-    const users = JSON.parse(localStorage.getItem('armonia_users') || '[]');
-    const idx = users.findIndex((u: any) => u.id === user.id);
-    if (idx !== -1) {
-      users[idx] = { ...users[idx], onboardingCompleted: true };
-      localStorage.setItem('armonia_users', JSON.stringify(users));
+    try {
+      await AuthService.completeOnboarding(user.id);
+      setUser(prev => prev ? { ...prev, onboardingCompleted: true } : null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error al completar onboarding';
+      setError(errorMessage);
+      console.error('Complete onboarding error:', err);
+      throw err;
+    }
+  };
+
+  const updateProfile = async (updates: Partial<Pick<User, 'name'>>): Promise<void> => {
+    if (!user) {
+      throw new Error('No hay usuario autenticado');
+    }
+
+    try {
+      const updatedUser = await AuthService.updateUserProfile(user.id, updates);
+      setUser(updatedUser);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error al actualizar perfil';
+      setError(errorMessage);
+      console.error('Update profile error:', err);
+      throw err;
     }
   };
 
   const logout = () => {
-    setUser(null);
-    localStorage.removeItem('armonia_user');
+    try {
+      AuthService.logout();
+      setUser(null);
+      setError(null);
+    } catch (err) {
+      console.error('Logout error:', err);
+      // Even if there's an error, we should clear the user state
+      setUser(null);
+      setError(null);
+    }
   };
+
+  // Clear error after some time
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   return {
     user,
@@ -128,6 +148,8 @@ export const useAuthLogic = () => {
     logout,
     isLoading,
     completeOnboarding,
+    updateProfile,
+    error,
   };
 };
 
